@@ -1,7 +1,9 @@
 import os
 import codecs
+
+import PyPDF2
 import cv2
-from pdf2image import convert_from_path
+from pdf2image import convert_from_path, convert_from_bytes
 
 from base.image import Image
 from base.levenstein import getLevenshteinEditorialInstruction, align
@@ -23,7 +25,15 @@ class Scan:
         self.editorialInstruction = ''
         self.alignedRecognizedWordId = []
         try:
-            for i, image in enumerate(convert_from_path(self.scanPath, poppler_path=os.path.join(os.getcwd(), 'sources\\poppler-24.08.0\\Library\\bin'))):
+            popplerPath = os.path.join(os.getcwd(), 'sources\\poppler-24.08.0\\Library\\bin').replace('\\', os.sep).\
+                replace('/', os.sep)
+            file = open(self.scanPath, 'rb')
+            pdfReader = PyPDF2.PdfReader(file)
+            while len(pdfReader.pages) < 1:
+                print(len(pdfReader.pages))
+                file = open(self.scanPath, 'rb')
+                pdfReader = PyPDF2.PdfReader(file)
+            for i, image in enumerate(convert_from_path(self.scanPath, poppler_path=popplerPath)):
                 imagePath = os.path.join(imagesFolder, str(i) + '.png')
                 image.save(imagePath, 'PNG')
                 self.images.append(Image(imagePath))

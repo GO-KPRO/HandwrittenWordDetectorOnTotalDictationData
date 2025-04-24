@@ -1,25 +1,29 @@
 import os
-import zipfile
+import time
 import shutil
+
+import cv2
 
 from base.scan import Scan
 
 
 class Manager:
-    def __init__(self):
+    def __init__(self, scansArchivePath, outputPath, textPath, datasetName, replacePercent, detector, recognizer):
         self.imagesPath = ''
-        self.scansArchivePath = ''
-        self.outputPath = ''
+        self.scansArchivePath = scansArchivePath
+        self.outputPath = outputPath
         self.scansPath = ''
         self.datasetPath = ''
+        self.curImgPath = ''
         self.scanFileNames = []
-        self.scans = []
-        self.text = ''
-        self.detector = None
-        self.recognizer = None
-        self.currentScan = 0
+        self.textPath = textPath
+        self.datasetName = datasetName
+        self.detector = detector
+        self.recognizer = recognizer
+        self.currentScanNumber = 0
+        self.replacePercent = replacePercent
 
-    def makeImagesDir(self):
+    def createImagesDirectory(self):
         self.imagesPath = os.path.join(self.outputPath, 'images')
         os.makedirs(self.imagesPath, exist_ok=True)
 
@@ -27,46 +31,27 @@ class Manager:
         self.datasetPath = os.path.join(self.outputPath, 'dataset')
         os.makedirs(self.datasetPath, exist_ok=True)
 
-    def setScansArchivePath(self, path):
-        self.scansArchivePath = path
+    def createCurrentImageDirectory(self):
+        self.curImgPath = os.path.join(self.outputPath, 'currentImage')
+        os.makedirs(self.curImgPath, exist_ok=True)
 
-    def unzipArchivePath(self, path):
-        self.outputPath = path
-        self.scansPath = os.path.join(path, 'scans')
-        os.makedirs(self.scansPath, exist_ok=True)
-        with zipfile.ZipFile(self.scansArchivePath, 'r') as zip_ref:
-            zip_ref.extractall(self.scansPath)
-
-    def validateScans(self) -> bool:
+    def setScanFileNames(self):
+        self.scansPath = os.path.join(self.outputPath, 'scans')
         self.scanFileNames = [os.path.join(self.scansPath, x) for x in os.listdir(self.scansPath)]
-        for scanFileName in self.scanFileNames:
-            filePath, fileExtension = os.path.splitext(scanFileName)
-            if fileExtension != '.pdf':
-                print(f'Error: file {scanFileName} has wrong extension')
-                return False
-        return True
 
-    def cleanScans(self):
-        shutil.rmtree(self.scansPath)
+    def iterateProcessScan(self, currentScan, currentFileName, currentImageUpdated):
+        scanFileName = self.scanFileNames[self.currentScanNumber]
+        currentScan.value = self.currentScanNumber
+        scanImagesPath = os.path.join(self.imagesPath, os.path.splitext(os.path.basename(scanFileName))[0])
+        currentFileName[:len(os.path.basename(scanFileName))] = os.path.basename(scanFileName)
+        os.makedirs(scanImagesPath, exist_ok=True)
+        time.sleep(1)
+        scan = Scan(scanFileName, scanImagesPath)  # Create scan object
+        interfaceImagePath = os.path.join(self.curImgPath, 'currentImage.png')
+        cv2.imwrite(interfaceImagePath, scan.images[0].image)
+        currentImageUpdated.value = True
 
-    def setDetector(self, detector):
-        self.detector = detector
-
-    def setRecognizer(self, recognizer):
-        self.recognizer = recognizer
-
-    def processScan(self, scanFileName, textPath, replacePercent, interface):
-        scansImagesPath = os.path.join(self.imagesPath, os.path.splitext(os.path.basename(scanFileName))[0])
-        interface.updateCurrentFileLabel(os.path.basename(scanFileName))
-        interface.update()
-        os.makedirs(scansImagesPath, exist_ok=True)
-        scan = Scan(scanFileName, scansImagesPath)
-        self.scans.append(scan)  # Create scan object
-
-        interface.updateCurrentImage(scan.images[0].path)
-        interface.update()
-
-        scan.readText(textPath)
+        scan.readText(self.textPath)
 
         scan.crop()
 
@@ -76,14 +61,17 @@ class Manager:
 
         scan.align()
 
-        scan.rateWords(replacePercent)
+        scan.rateWords(self.replacePercent)
 
-        scan.saveData(self.datasetPath, replacePercent)
+        scan.saveData(self.datasetPath, self.replacePercent)
 
-    def iterateScanProcessing(self, textPath, replacePercent, interface):
-        self.processScan(self.scanFileNames[self.currentScan], textPath, replacePercent, interface)
-        self.currentScan += 1
-        if self.currentScan < len(self.scanFileNames):
+        self.currentScanNumber += 1
+
+        if self.currentScanNumber < len(self.scanFileNames):
             return True
         else:
             return False
+
+    def endProcessing(self):
+        shutil.make_archive(base_name=os.path.join(self.outputPath, self.datasetName), format='zip',
+                            root_dir=os.path.join(self.outputPath, 'dataset'))
